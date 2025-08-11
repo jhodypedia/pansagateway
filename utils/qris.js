@@ -1,5 +1,4 @@
 // utils/qris.js
-// build QRIS payload (expects base payload contains {AMOUNT_FIELD})
 function crc16CcittFalse(input) {
   const poly = 0x1021;
   let crc = 0xFFFF;
@@ -12,13 +11,23 @@ function crc16CcittFalse(input) {
   }
   return crc & 0xFFFF;
 }
-function toHex4(n) { return n.toString(16).toUpperCase().padStart(4,'0'); }
+
+function toHex4(n) {
+  return n.toString(16).toUpperCase().padStart(4, '0');
+}
 
 export function buildQrisPayload(basePayload, amountNumber) {
-  const amtStr = String(amountNumber);
-  const amtField = '54' + String(amtStr.length).padStart(2,'0') + amtStr;
+  // Format nominal jadi 2 digit desimal
+  const amtStr = parseFloat(amountNumber).toFixed(2);
+  const amtField = '54' + String(amtStr.length).padStart(2, '0') + amtStr;
+
+  // Sisipkan nominal
   const payloadWithoutCRC = basePayload.replace('{AMOUNT_FIELD}', amtField);
+
+  // Hitung CRC
   const crcInput = payloadWithoutCRC + '6304';
   const crc = toHex4(crc16CcittFalse(crcInput));
+
+  // Gabungkan CRC
   return payloadWithoutCRC + crc;
 }
