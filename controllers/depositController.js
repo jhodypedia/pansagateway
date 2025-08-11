@@ -5,6 +5,9 @@ import { buildQrisPayload } from '../utils/qris.js';
 import { randomInt, generateDepositId } from '../utils/random.js';
 import { notifyAdmins } from '../bot/whatsapp.js';
 
+// Payload QRIS statis, gunakan {AMOUNT_FIELD} sebagai placeholder nominal
+const STATIC_QRIS_PAYLOAD = "00020101021226610014COM.GO-JEK.WWW01189360091438098430560210G8098430560303UMI51440014ID.CO.QRIS.WWW0215ID10254038798730303UMI5204549953033605405{AMOUNT_FIELD}5802ID5911Pansa Store6010BOJONEGORO61056211162395028A120250811073942Vg1nhqT6lJID0703A016304";
+
 export async function createDeposit(req, res) {
   const { amount } = req.body;
   if (!amount || Number(amount) <= 0) {
@@ -12,20 +15,17 @@ export async function createDeposit(req, res) {
   }
 
   try {
+    // Buat kode unik (3 digit)
     const kodeUnik = randomInt(100, 999);
     const total = Number(amount) + kodeUnik;
 
-    // Payload QRIS statis yang kamu berikan
-    const basePayload =
-      "00020101021226610014COM.GO-JEK.WWW01189360091438098430560210G8098430560303UMI51440014ID.CO.QRIS.WWW0215ID10254038798730303UMI5204549953033605405100005802ID5911Pansa Store6010BOJONEGORO61056211162395028A120250811073942Vg1nhqT6lJID0703A016304F805";
+    // Bangun payload QRIS dengan nominal
+    const finalPayload = buildQrisPayload(STATIC_QRIS_PAYLOAD, String(Math.round(total)));
 
-    // Bangun payload final sesuai total deposit
-    const finalPayload = buildQrisPayload(basePayload, String(Math.round(total)));
-
-    // Buat QR image
+    // Generate QR code image (base64)
     const qrImage = await QRCode.toDataURL(finalPayload);
 
-    // Generate deposit_id unik
+    // Buat deposit ID unik
     let depositId = generateDepositId();
     let tries = 0;
     while (tries < 10) {
@@ -35,16 +35,23 @@ export async function createDeposit(req, res) {
       tries++;
     }
 
-    const expiredAt = new Date(Date.now() + 15 * 60 * 1000); // 15 menit
+    const expiredAt = new Date(Date.now() + 15 * 60 * 1000); // Expired 15 menit
 
-    // Simpan ke DB
+    // Simpan ke database
     await db.query(
-      'INSERT INTO deposits (deposit_id,user_id,amount,kode_unik,status,created_at,expired_at,qr_image,payload) VALUES (?,?,?,?,NOW(),?,?,?,?)',
-      [depositId, req.user.id, total, kodeUnik, 'pending', expiredAt, qrImage, finalPayload]
+      `INSERT INTO deposits 
+       (deposit_id, user_id, amount, kode_unik, status, created_at, expired_at, qr_image, payload) 
+       VALUES (?, ?, ?, ?, 'pending', NOW(), ?, ?, ?)`,
+      [depositId, req.user.id, total, kodeUnik, expiredAt, qrImage, finalPayload]
     );
 
-    // Kirim notifikasi admin
-    await notifyAdmins({ depositId, amount: total, username: req.user.username, userId: req.user.id });
+    // Notifikasi ke admin
+    await notifyAdmins({
+      depositId,
+      amount: total,
+      username: req.user.username,
+      userId: req.user.id
+    });
 
     res.json({ depositId, amount: total, qrImage, expiredAt });
   } catch (err) {
@@ -56,15 +63,22 @@ export async function createDeposit(req, res) {
 export async function getDeposit(req, res) {
   const depositId = req.params.depositId;
   try {
-    const [rows] = await db.query('SELECT * FROM deposits WHERE deposit_id = ? AND user_id = ?', [depositId, req.user.id]);
-    if (!rows || rows.length === 0) return res.status(404).json({ error: 'Deposit not found' });
+    const [rows] = await db.query(
+      'SELECT * FROM deposits WHERE deposit_id = ? AND user_id = ?',
+      [depositId, req.user.id]
+    );
+
+    if (!rows || rows.length === 0) {
+      return res.status(404).json({ error: 'Deposit not found' });
+    }
 
     const d = rows[0];
     if (d.status === 'pending' && new Date(d.expired_at) < new Date()) {
       await db.query('UPDATE deposits SET status = ? WHERE id = ?', ['expired', d.id]);
       d.status = 'expired';
     }
-    delete d.payload;
+
+    delete d.payload; // jangan kirim payload QRIS mentah ke user
     res.json(d);
   } catch (err) {
     console.error(err);
@@ -75,7 +89,10 @@ export async function getDeposit(req, res) {
 export async function listDeposits(req, res) {
   try {
     const [rows] = await db.query(
-      'SELECT deposit_id,amount,kode_unik,status,created_at,expired_at FROM deposits WHERE user_id = ? ORDER BY created_at DESC LIMIT 200',
+      `SELECT deposit_id, amount, kode_unik, status, created_at, expired_at 
+       FROM deposits 
+       WHERE user_id = ? 
+       ORDER BY created_at DESC LIMIT 200`,
       [req.user.id]
     );
     res.json(rows);
