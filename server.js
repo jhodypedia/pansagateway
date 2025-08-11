@@ -8,6 +8,7 @@ dotenv.config();
 
 import db from './config/db.js';
 import { register, login, profile } from './controllers/authController.js';
+import { qrisListener } from './controllers/listenerController.js';
 import { createDeposit, getDeposit, listDeposits, mutations } from './controllers/depositController.js';
 import { initWhatsApp } from './bot/whatsapp.js';
 import { authMiddleware } from './middlewares/authMiddleware.js';
@@ -32,6 +33,7 @@ app.get('/api/deposits', authMiddleware, listDeposits);
 
 // Mutations
 app.get('/api/mutations', authMiddleware, mutations);
+app.post('/api/qris/listener', qrisListener);
 
 // optional: list payloads for users
 app.get('/api/payloads', authMiddleware, async (req, res) => {
