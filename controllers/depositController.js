@@ -5,8 +5,9 @@ import { buildQrisPayload } from '../utils/qris.js';
 import { randomInt, generateDepositId } from '../utils/random.js';
 import { notifyAdmins } from '../bot/whatsapp.js';
 
-// Payload QRIS statis, gunakan {AMOUNT_FIELD} sebagai placeholder nominal
-const STATIC_QRIS_PAYLOAD = "00020101021226610014COM.GO-JEK.WWW01189360091438098430560210G8098430560303UMI51440014ID.CO.QRIS.WWW0215ID10254038798730303UMI5204549953033605405{AMOUNT_FIELD}5802ID5911Pansa Store6010BOJONEGORO61056211162395028A120250811073942Vg1nhqT6lJID0703A016304";
+// Payload QRIS statis (dari gambar kamu) dengan placeholder nominal
+const STATIC_QRIS_PAYLOAD =
+  "00020101021126610014COM.GO-JEK.WWW01189360091438098430560210G8098430560303UMI51440014ID.CO.QRIS.WWW0215ID10254038798730303UMI5204549953033605802ID5911Pansa Store6010BOJONEGORO61056211162070703A01{AMOUNT_FIELD}6304";
 
 export async function createDeposit(req, res) {
   const { amount } = req.body;
@@ -20,7 +21,7 @@ export async function createDeposit(req, res) {
     const total = Number(amount) + kodeUnik;
 
     // Bangun payload QRIS dengan nominal
-    const finalPayload = buildQrisPayload(STATIC_QRIS_PAYLOAD, String(Math.round(total)));
+    const finalPayload = buildQrisPayload(STATIC_QRIS_PAYLOAD, total);
 
     // Generate QR code image (base64)
     const qrImage = await QRCode.toDataURL(finalPayload);
@@ -45,7 +46,7 @@ export async function createDeposit(req, res) {
       [depositId, req.user.id, total, kodeUnik, expiredAt, qrImage, finalPayload]
     );
 
-    // Notifikasi ke admin
+    // Notifikasi ke admin via WhatsApp
     await notifyAdmins({
       depositId,
       amount: total,
